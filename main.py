@@ -1,6 +1,7 @@
 from flask import Flask, request, g, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_apscheduler import APScheduler
+from flask_minify import Minify
 from werkzeug.middleware.proxy_fix import ProxyFix
 import sqlite3, utils, time, mailer
 import string, random, re, os
@@ -10,6 +11,7 @@ from math import floor
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "5cb9de18113c3121974032fe411a3f123187c756bb957814f27dccedf59e3e27d3ff79a97e5994ad3f182fdd3514158275ee08283a11228ae880c91271e4c6bd"
 socketio = SocketIO(app)
+Minify(app=app, html=True, js=True, cssless=True)
 
 DATABASE = 'data.db'
 URL = os.getenv("URL", 'http://127.0.0.1:5000/')
