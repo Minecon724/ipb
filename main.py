@@ -36,6 +36,7 @@ init_db()
 
 @app.route('/', methods=['GET'])
 def page_home():
+    print(request.headers)
     return render_template('index.html')
 
 @app.route('/chat', methods=['GET'])
@@ -63,7 +64,7 @@ def page_register():
     data = request.form
     email = data['email']
     try:
-        register(request.headers['X-Forwarded-For'], email)
+        register(request.remote_addr, email)
     except Exception as e:
         return str(e)
     return "Now wait for a message"
