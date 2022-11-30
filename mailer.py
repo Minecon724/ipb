@@ -4,14 +4,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.header import Header
 from datetime import datetime
+import os
 
-my_name = "FriendProtocol"
-my_address = "notifications@3craft.xyz"
-password = "f6uF_1k3"
-
+my_name = os.getenv("EMAIL_NAME")
+my_address = os.getenv("EMAIL_ADDR")
+password = os.getenv("EMAIL_PASS")
 
 def auth():
-    server = smtplib.SMTP_SSL("mail.3craft.xyz", context=ssl.create_default_context())
+    server = smtplib.SMTP_SSL(os.getenv("EMAIL_SERV"), context=ssl.create_default_context())
     server.login(my_address, password)
     return server
 

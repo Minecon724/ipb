@@ -11,7 +11,7 @@ app.config['SECRET_KEY'] = "5cb9de18113c3121974032fe411a3f123187c756bb957814f27d
 socketio = SocketIO(app)
 
 DATABASE = 'data.db'
-URL = 'http://127.0.0.1:5000/'
+URL = os.getenv("URL", 'http://127.0.0.1:5000/')
 
 def get_db():
     db = getattr(g, '_database', None)
@@ -212,4 +212,4 @@ def matcher():
 
 scheduler.init_app(app)
 scheduler.start()
-socketio.run(app, debug=True)
+socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=True)
