@@ -1,6 +1,7 @@
 from flask import Flask, request, g, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_apscheduler import APScheduler
+from werkzeug.middleware.proxy_fix import ProxyFix
 import sqlite3, utils, time, mailer
 import string, random, re, os
 import dns.resolver
@@ -8,6 +9,9 @@ from math import floor
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "5cb9de18113c3121974032fe411a3f123187c756bb957814f27dccedf59e3e27d3ff79a97e5994ad3f182fdd3514158275ee08283a11228ae880c91271e4c6bd"
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+)
 socketio = SocketIO(app)
 
 DATABASE = 'data.db'
@@ -113,9 +117,8 @@ def unregister(code):
     con.commit()
     return user
 
-@app.route('/api/accounts', methods=['GET'])
+@app.route('/api/accounts/' + os.getenv("ACCOUNTS", ''), methods=['GET'])
 def accounts():
-    if request.remote_addr != '127.0.0.1': return "Unauthorized", 403
     cur = get_db().cursor()
     cur.execute("SELECT * FROM users")
     return str(cur.fetchall())
