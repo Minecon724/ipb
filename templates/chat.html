@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>FriendProtocol</title>
+        <link rel="stylesheet" href="{{ url_for('static', filename='uni.css') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
+    </head>
+    <body>
+        <div id="popup">test</div>
+        <div id="chat"></div>
+        <div id="composer">
+            <input type="text" id="textbox">
+            <div id="send" onclick="sendmsg()"></div>
+        </div>
+        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+        <script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+    </body>
+</html>
