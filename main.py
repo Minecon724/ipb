@@ -2,7 +2,7 @@ from flask import Flask, request, g, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from flask_apscheduler import APScheduler
 import sqlite3, utils, time, mailer
-import string, random, re
+import string, random, re, os
 import dns.resolver
 from math import floor
 
@@ -80,9 +80,13 @@ def register(ip, email):
         raise ValueError("Invalid IP address")
     dns.resolver.resolve(email.split("@")[1], 'MX')
 
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=32))
     con = get_db()
     cur = con.cursor()
+    cur.execute('SELECT id FROM users WHERE ip=?', (ip,))
+    if cur.fetchone() != None:
+        raise ValueError("Duplicate")
+
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=32))
     cur.execute('SELECT MAX(id) FROM users')
     latest = cur.fetchone()
     uid = 0
@@ -111,6 +115,7 @@ def unregister(code):
 
 @app.route('/api/accounts', methods=['GET'])
 def accounts():
+    if request.remote_addr != '127.0.0.1': return "Unauthorized", 403
     cur = get_db().cursor()
     cur.execute("SELECT * FROM users")
     return str(cur.fetchall())
@@ -207,8 +212,8 @@ def matcher():
             data = cur.fetchone()
             chid = mail_queue[i][1]
             chkey = mail_queue[i][2]
-            #mailer.notify_new_match(data[0], mail_queue[i][0], URL + f"chat?room={chid}&key={chkey}", URL + 'unregister/' + data[1])
-            print(data[0], mail_queue[i][0], URL + f"chat?key={chkey}", URL + 'unregister/' + data[1])
+            mailer.notify_new_match(data[0], mail_queue[i][0], URL + f"chat?key={chkey}", URL + 'unregister/' + data[1])
+            #print(data[0], mail_queue[i][0], URL + f"chat?key={chkey}", URL + 'unregister/' + data[1])
 
 scheduler.init_app(app)
 scheduler.start()
