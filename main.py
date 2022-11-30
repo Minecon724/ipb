@@ -217,4 +217,5 @@ def matcher():
 
 scheduler.init_app(app)
 scheduler.start()
-socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=False)
+if __name__ == "__main__":
+    socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=False)
