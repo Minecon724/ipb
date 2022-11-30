@@ -9,9 +9,6 @@ from math import floor
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "5cb9de18113c3121974032fe411a3f123187c756bb957814f27dccedf59e3e27d3ff79a97e5994ad3f182fdd3514158275ee08283a11228ae880c91271e4c6bd"
-app.wsgi_app = ProxyFix(
-    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
-)
 socketio = SocketIO(app)
 
 DATABASE = 'data.db'
@@ -66,7 +63,7 @@ def page_register():
     data = request.form
     email = data['email']
     try:
-        register(request.remote_addr, email)
+        register(request.headers['X-Forwarded-For'], email)
     except Exception as e:
         return str(e)
     return "Now wait for a message"
@@ -220,5 +217,8 @@ def matcher():
 
 scheduler.init_app(app)
 scheduler.start()
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+)
 if __name__ == "__main__":
     socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=False)
