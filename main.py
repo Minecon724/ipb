@@ -219,7 +219,7 @@ def matcher():
 scheduler.init_app(app)
 scheduler.start()
 app.wsgi_app = ProxyFix(
-    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+    app.wsgi_app, x_for=4, x_proto=1, x_host=0, x_prefix=0
 )
 if __name__ == "__main__":
     socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=False)
