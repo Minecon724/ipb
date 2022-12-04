@@ -1,6 +1,7 @@
 flask
 Flask-SocketIO
 Flask-Minify
+python-dotenv
 psycopg2
 dnspython
 Gunicorn
