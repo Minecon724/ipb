@@ -1,25 +1,35 @@
 from flask import Flask, request, g, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
-from flask_apscheduler import APScheduler
 from flask_minify import Minify
 from werkzeug.middleware.proxy_fix import ProxyFix
-import sqlite3, utils, time, mailer
+import psycopg2, utils, time
 import string, random, re, os
 import dns.resolver
+from secrets import token_urlsafe, token_hex
+from datetime import datetime
 from math import floor
+from dotenv import load_dotenv
+
+load_dotenv()
+
+PAPER_MAIL = bool(os.getenv('PAPER_MAIL'))
+POSTGRES_HOST = os.getenv('POSTGRES_HOST')
+POSTGRES_NAME = os.getenv('POSTGRES_NAME')
+POSTGRES_USER = os.getenv('POSTGRES_USER')
+POSTGRES_PASS = os.getenv('POSTGRES_PASS')
+URL = os.getenv('URL')
+
+if not PAPER_MAIL: import mailer
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = "5cb9de18113c3121974032fe411a3f123187c756bb957814f27dccedf59e3e27d3ff79a97e5994ad3f182fdd3514158275ee08283a11228ae880c91271e4c6bd"
 socketio = SocketIO(app)
 Minify(app=app, html=True, js=True, cssless=True)
 
-DATABASE = 'data.db'
-URL = os.getenv("URL", 'http://127.0.0.1:5000/')
-
 def get_db():
     db = getattr(g, '_database', None)
     if db is None:
-        db = g._database = sqlite3.connect(DATABASE)
+        db = g._database = psycopg2.connect(dbname=POSTGRES_NAME, user=POSTGRES_USER, password=POSTGRES_PASS, host=POSTGRES_HOST)
     return db
 
 @app.teardown_appcontext
@@ -31,8 +41,11 @@ def close_connection(exception):
 def init_db():
     with app.app_context():
         db = get_db()
+        cur = db.cursor()
         with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
+            for line in f:
+                cur.execute(line)
+        cur.execute("TRUNCATE TABLE sessions")
         db.commit()
 init_db()
 
@@ -55,10 +68,10 @@ def page_unregister(code):
 def page_confirm(code):
     con = get_db()
     cur = con.cursor()
-    user = cur.execute("SELECT id FROM users WHERE code=?", (code,)).fetchone()
-    con.execute("UPDATE users SET confirmed=TRUE WHERE code=?", (code,))
+    user = cur.execute("SELECT id FROM users WHERE code=%s", (code,))
+    if user.fetchone() == None: return "Invalid code", 404
+    cur.execute("UPDATE users SET confirmed=TRUE WHERE code=%s", (code,))
     con.commit()
-    if user == None: return "Invalid code", 404
     return "Registered successfully!"
 
 @app.route('/register', methods=['POST'])
@@ -69,7 +82,7 @@ def page_register():
         register(request.remote_addr, email)
     except Exception as e:
         return str(e)
-    return "Now wait for a message"
+    return "Check your inbox"
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
@@ -86,18 +99,19 @@ def register(ip, email):
 
     con = get_db()
     cur = con.cursor()
-    cur.execute('SELECT id FROM users WHERE ip=?', (ip,))
-    if cur.fetchone() != None:
-        raise ValueError("Duplicate")
+    cur.execute('SELECT id FROM users WHERE ip=%s', (ip,))
+    #if cur.fetchone() != None:
+    #    raise ValueError("Duplicate")
 
     code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=32))
     cur.execute('SELECT MAX(id) FROM users')
     latest = cur.fetchone()
-    uid = 0
+    uid = 1
     if latest[0] != None: uid = latest[0]+1
-    con.execute("INSERT INTO users VALUES (?, ?, ?, ?, ?)", (uid, ip, email, False, code))
+    cur.execute("INSERT INTO users VALUES (%s, %s, %s, %s, %s)", (uid, ip, email, False, code))
     con.commit()
-    mailer.confirm(email, URL + 'confirm/' + code)
+    if not PAPER_MAIL: mailer.confirm(email, URL + 'confirm/' + code)
+    else: print(email, URL + 'confirm/' + code)
     return {'id': uid, 'ip': ip, 'email': email, 'code': code}
 
 @app.route('/api/unregister', methods=['POST'])
@@ -111,13 +125,13 @@ def api_unregister():
 def unregister(code):
     con = get_db()
     cur = con.cursor()
-    user = cur.execute("SELECT id FROM users WHERE code=?", (code,)).fetchone()
-    if user[0] == None: return None
-    con.execute("DELETE FROM users WHERE id=?", (user[0],))
+    user = cur.execute("SELECT id FROM users WHERE code=%s", (code,))
+    if user.fetchone() == None: return None
+    cur.execute("DELETE FROM users WHERE id=%s", (user[0],))
     con.commit()
     return user
 
-@app.route('/api/accounts/' + os.getenv("ACCOUNTS", ''), methods=['GET'])
+@app.route('/api/accounts', methods=['GET'])
 def accounts():
     cur = get_db().cursor()
     cur.execute("SELECT * FROM users")
@@ -127,101 +141,108 @@ def accounts():
 def socket_connect(auth):
     cid = request.sid
     key = auth['key']
+    history = auth['history']
+    print(history)
     with app.app_context():
         con = get_db()
         cur = con.cursor()
 
-        cur.execute("SELECT chat,uid FROM keys WHERE key=?", (key,))
+        cur.execute("SELECT chat,uid FROM keys WHERE key=%s", (key,))
         room_info = cur.fetchone()
         if room_info == None:
             emit('error', {'code': -1, 'description': 'Invalid key'}) # Not found
             return
         
-        con.execute("INSERT INTO sessions VALUES (?, ?, ?)", (cid,room_info[0],room_info[1]))
+        cur.execute("INSERT INTO sessions VALUES (%s, %s, %s)", (cid,room_info[0],room_info[1]))
         con.commit()
         join_room(room_info[0])
         emit('success', {})
-    emit('welcome', {'cid': cid, 'uid': room_info[1]})
+        emit('welcome', {'cid': cid, 'uid': room_info[1]})
+        emit('status', {'uid': room_info[1], 'online': True}, to=room_info[0])
+        cur.execute("SELECT uid FROM sessions WHERE chat=%s AND NOT uid=%s", room_info)
+        recipent = cur.fetchone()
+        if recipent != None:
+            emit('status', {'uid': recipent[0], 'online': True}, to=room_info[0])
+
+        cur.execute("SELECT nickname FROM nicknames WHERE chat=%s AND uid=%s", room_info)
+        nickname = cur.fetchone()
+        print("Nn", nickname)
+        if nickname != None:
+            emit('nickname', {'nickname': nickname[0]})
+        if history:
+            cur.execute("SELECT sender,timestamp,content FROM messages WHERE chat=%s ORDER BY timestamp ASC LIMIT 25", (room_info[0],))
+            for m in cur.fetchall():
+                emit('message', {'sender': m[0], 'timestamp': m[1], 'content': m[2]})
+        
     print("Connected")
 
 @socketio.on('disconnect')
 def socket_disconnect():
-    cid = request.sid
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT chat,uid FROM sessions WHERE cid=?", (cid,))
+    with app.app_context():
+        cid = request.sid
+        con = get_db()
+        cur = con.cursor()
+        cur.execute("SELECT chat,uid FROM sessions WHERE cid=%s", (cid,))
+        room = cur.fetchone()
+        print(room)
+        if room == None:
+            return
+
+        cur.execute("DELETE FROM sessions WHERE cid=%s", (cid,))
+        con.commit()
+
+        cur.execute("SELECT chat,cid FROM sessions WHERE uid=%s", (room[1],))
+        if cur.fetchone() == None:
+            emit('status', {'uid': room[1], 'online': False}, to=room[0])
 
 @socketio.on('message')
 def socket_message(data):
-    print(data)
     cid = request.sid
     content = data['content']
-    if len(content) > 200:
+    timestamp = datetime.utcnow().timestamp() * 1000
+    if len(content) > 2000:
         emit('system', {'message': 'Message too long'})
         return
     with app.app_context():
         con = get_db()
         cur = con.cursor()
 
-        cur.execute("SELECT chat,uid FROM sessions WHERE cid=?", (cid,))
+        cur.execute("SELECT chat,uid FROM sessions WHERE cid=%s", (cid,))
         room = cur.fetchone()
         print(room)
         if room == None:
             emit('error', {'code': 1, 'description': 'Unauthorized'}) # Unauthorized
             return
         
-        emit('message', {'sender': room[1], 'content': content}, to=room[0])
+        emit('message', {'sender': room[1], 'timestamp': timestamp, 'content': content}, to=room[0])
+        cur.execute("INSERT INTO messages VALUES (%s, %s, %s, %s)", (room[0], room[1], timestamp, content))
+        con.commit()
 
-scheduler = APScheduler()
-scheduler.api_enabled = True
+@socketio.on('load')
+def socket_load(data):
+    # TODO
+    last = data['last']
 
-@scheduler.task('interval', id='matcher', seconds=5, max_instances=1)
-def matcher():
-    print("Scan starting")
-    start = time.time()
-    mail_queue = {}
-    queued = []
-    with scheduler.app.app_context():
+@socketio.on('nickname')
+def socket_nickname(data):
+    cid = request.sid
+    nickname = data['nickname']
+    with app.app_context():
         con = get_db()
         cur = con.cursor()
-        cur.execute("SELECT * FROM users")
-        users = cur.fetchall()
-        for i in users:
-            cur.execute("SELECT u2 FROM matches WHERE u1=?", (i[0],))
-            existing = [j[0] for j in cur.fetchall()]
-            potential = [j for j in users if utils.distance(i[1], j[1]) < 255 and not i[0] == j[0] and not j[0] in existing]
-            for j in potential:
-                slist = sorted([i[0], j[0]])
-                queued += [ ','.join([str(k) for k in slist]) ]
-        for i in [*set(queued)]:
-            u1, u2 = i.split(',')
-            chid = ''.join(random.choices(string.ascii_uppercase + string.digits, k=16))
-            chkey = [''.join(random.choices(string.ascii_uppercase + string.digits, k=128)) for _ in range(2)]
-            con.execute("INSERT INTO matches VALUES (?, ?)", (u1, u2))
-            con.execute("INSERT INTO matches VALUES (?, ?)", (u2, u1))
-            con.execute("INSERT INTO keys VALUES (?, ?, ?)", (chkey[0], u1, chid))
-            con.execute("INSERT INTO keys VALUES (?, ?, ?)", (chkey[1], u2, chid))
-            dist = utils.distance(
-                cur.execute("SELECT ip FROM users WHERE id=?", (u1,)).fetchone()[0],
-                cur.execute("SELECT ip FROM users WHERE id=?", (u2,)).fetchone()[0]
-            )
-            mail_queue[u1] = [dist, chid, chkey[0]]
-            mail_queue[u2] = [dist, chid, chkey[1]]
-        con.commit()
-        end = time.time()
-        print("Scan took " + str( floor(end-start) ))
-        for i in mail_queue:
-            cur.execute("SELECT email,code FROM users WHERE id=?", (i,))
-            data = cur.fetchone()
-            chid = mail_queue[i][1]
-            chkey = mail_queue[i][2]
-            mailer.notify_new_match(data[0], mail_queue[i][0], URL + f"chat?key={chkey}", URL + 'unregister/' + data[1])
-            #print(data[0], mail_queue[i][0], URL + f"chat?key={chkey}", URL + 'unregister/' + data[1])
+        cur.execute("SELECT uid,chat FROM sessions WHERE cid=%s", (cid,))
+        info = cur.fetchone()
+        if info == None:
+            emit('system', {'message': 'wat'})
+            return
 
-scheduler.init_app(app)
-scheduler.start()
+        print((nickname,) + info)
+        cur.execute("INSERT INTO nicknames (uid,chat,nickname) VALUES (%s, %s, %s) ON CONFLICT (uid,chat) DO UPDATE SET nickname=EXCLUDED.nickname", info + (nickname,))
+        con.commit()
+        emit('system', {'message': 'Nickname saved'})
+
 app.wsgi_app = ProxyFix(
     app.wsgi_app, x_for=4, x_proto=1, x_host=0, x_prefix=0
 )
 if __name__ == "__main__":
-    socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=False)
+    socketio.run(app, host=os.getenv("HOST", '127.0.0.1'), port=os.getenv("PORT", '5000'), debug=True)
