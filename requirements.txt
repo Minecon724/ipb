@@ -1,7 +1,7 @@
 flask
 Flask-SocketIO
-Flask-APScheduler==1.12.1
 Flask-Minify
+psycopg2
 dnspython
 Gunicorn
 gevent
