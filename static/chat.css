@@ -7,7 +7,34 @@ html, body {
     background: whitesmoke;
 }
 
+#nickname {
+    float: left;
+    padding: 0;
+    margin: 0;
+    outline: none;
+}
+
+#status {
+    float: right;
+    border-radius: 7px;
+    padding-left: 4px;
+    padding-right: 4px;
+    background-color: rgb(255,100,100);
+}
+
+#header {
+    padding: 7px;
+    width: calc(100vw - 14px);
+    backdrop-filter: blur(8px);
+    height: 22px;
+    background-color: transparent;
+    display: fixed;
+    position: absolute;
+}
+
 #chat {
+    margin: 0 auto;
+    width: calc(100vw - 50px);
     height: calc(100vh - 80px);
     overflow-y: scroll;
     overflow-x: visible;
@@ -40,10 +67,12 @@ input {
 
 #send {
     cursor: pointer;
-    background: black;
+    background: aqua;
     width: 50px;
     height: 100%;
     float: left;
+    mask: url(paper-plane-solid.svg) no-repeat center;
+    mask-size: 70%;
 }
 
 .message {
@@ -55,7 +84,7 @@ input {
     width: fit-content;
     padding: 7px;
     color: white;
-    border-radius: 16px;
+    border-radius: 24px;
     background: darkslategray;
     display: flex;
     vertical-align: center;
@@ -76,6 +105,6 @@ input {
     outline: 1px solid black;
     display: fixed;
     position: absolute;
-    top: 15px;
+    top: 40px;
     left: 15px;
 }

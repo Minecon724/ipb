@@ -2,13 +2,16 @@
 <html>
     <head>
         <meta charset="utf-8">
-        <title>Meet</title>
+        <title>R | FriendProtocol</title>
         <link rel="stylesheet" href="{{ url_for('static', filename='uni.css') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='index.css') }}">
     </head>
     <body>
-        <form method="post" action="/register">
-            <input type="text" name="email" placeholder="Email">
-            <input type="submit">
-        </form>
+        <div id="wrapper">
+            <form method="post" action="/register">
+                <input type="text" name="email" placeholder="Email">
+                <div style="height: 15px;"></div>
+                <div id="bwrap"><input type="submit" value="Register"></div>
+            </form>
+        </div>
 </html>

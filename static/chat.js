@@ -2,12 +2,27 @@ var uid = 0;
 const textbox = document.getElementById("textbox");
 const chat = document.getElementById("chat");
 const popup = document.getElementById('popup');
+const status = document.getElementById('status');
+const nickname = document.getElementById('nickname');
 const params = new URLSearchParams(window.location.search);
+const e2eKey = params.get('enc');
 
+const start = new Date();
 const socket = io({
     auth: {
-        'key': params.get('key')
+        'key': params.get('key'),
+        'history': true
     }
+});
+
+socket.on('connect', () => {
+    console.log(socket.auth.history);
+    notify(`Connected (${new Date() - start}ms)`);
+})
+
+socket.on('disconnect', (reason) => {
+    socket.auth.history = false;
+    notify(`Disconnected: ${reason}`);
 });
 
 socket.on('welcome', (data) => {
@@ -16,8 +31,43 @@ socket.on('welcome', (data) => {
 });
 
 socket.on('message', (data) => {
-    add_message(data['sender'], data['content']);
+    (async() => {
+        const message = await openpgp.readMessage({ armoredMessage: data['content'] });
+        const {data: decrypted} = await openpgp.decrypt({
+            message,
+            passwords: [e2eKey],
+            format: 'armored'
+        });
+        add_message(data['sender'], data['timestamp'], decrypted);
+    })();
 });
+
+socket.on('status', (data) => {
+    console.log(data);
+    if (data['uid'] == uid) return;
+    var online = data['online'];
+    const text = online ? 'Online' : 'Offline';
+    const color = online ? 'rgb(100,255,100)' : 'rgb(255,100,100)';
+    status.innerText = text;
+    status.style.backgroundColor = color;
+})
+
+var editing = false;
+nickname.addEventListener('blur', function() {
+    if (editing) {
+        socket.emit('nickname', {'nickname': nickname.innerText});
+        console.log('Nickname set');
+    }
+    editing = false;
+})
+nickname.addEventListener('input', function() {
+    editing = true;
+    console.log(nickname.innerText);
+})
+
+socket.on('nickname', (data) => {
+    nickname.innerText = data['nickname'];
+})
 
 socket.on('system', (data) => {
     notify(data['message']);
@@ -35,7 +85,7 @@ function notify(content) {
     setTimeout(() => { if (hideAt < Date.now()) popup.style.display = 'none'; }, 4200);
 }
 
-function add_message(sender, content) {
+function add_message(sender, timestamp, content) {
     console.log(`New message by ${sender}: ${content}`);
 
     const line = document.createElement('div');
@@ -58,10 +108,26 @@ function sendmsg() {
     var content = textbox.value;
     if (content.length == 0) return;
     textbox.value = '';
-    console.log(content)
-    send(content);
+    console.log(content);
+
+    (async() => {
+        const message = await openpgp.createMessage({ text: content });
+        const encrypted = await openpgp.encrypt({
+            message,
+            passwords: [e2eKey],
+            format: 'armored'
+        });
+        send(encrypted);
+    })();
 }
 
 window.addEventListener('keypress', function(ev) {
     if (ev.key == 'Enter') sendmsg();
 })
+
+var switched = false;
+setInterval(function() {
+    if (!switched) document.title = nickname.innerText + " | FriendProtocol";
+    else document.title = "C | FriendProtocol";
+    switched = !switched;
+}, 5000);
