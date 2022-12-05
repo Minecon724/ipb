@@ -1,3 +1,6 @@
+import sys
+sys.path.insert(1, '../lib')
+
 from secrets import token_hex, token_urlsafe
 import time, utils
 from math import floor
